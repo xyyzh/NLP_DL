@@ -69,7 +69,7 @@ def tokenize_w2v(
     import re
 
     if normalize:
-        regexp = re.compile("[^a-zA-Z ]+")
+        regexp = re.compile("[^a-zA-Z ]+") 
         # Lowercase, Remove non-alphanum
         text = [regexp.sub("", t.lower()) for t in text]
 
@@ -356,7 +356,14 @@ def build_current_surrounding_pairs(indices: "list[int]", window_size: int = 2):
     [[110, 4887], [3, 11], [4887, 31]]
     """
     # TODO: your work here
-    pass
+    # not enough length
+    if len(indices) < window_size*2+1: return
+    surrounding_indices = []
+    current_indices = []
+    for i in range(window_size, len(indices)-window_size):
+        current_indices.append(indices[i])
+        surrounding_indices.append(indices[i-window_size:i] + indices[i+1:i+window_size+1])
+    return surrounding_indices, current_indices
 
 
 def expand_surrounding_words(
