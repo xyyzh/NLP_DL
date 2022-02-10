@@ -357,7 +357,7 @@ def build_current_surrounding_pairs(indices: "list[int]", window_size: int = 2):
     """
     # TODO: your work here
     # not enough length
-    if len(indices) < window_size*2+1: return
+    #if len(indices) < (window_size*2+1): return
     surrounding_indices = []
     current_indices = []
     for i in range(window_size, len(indices)-window_size):
@@ -439,7 +439,15 @@ def cbow_preprocessing(indices_list: "list[list[int]]", window_size: int = 2):
         The targets of the CBOW model. Contains the indices of the target word w(t).
     """
     # TODO: your work here
-    pass
+    sources, targets = [], []
+    for sample in indices_list:
+        surroundings, currents = build_current_surrounding_pairs(sample, window_size)
+        #surroundings_expanded, currents_expanded = expand_surrounding_words(surroundings, currents)
+        #sources.append(surroundings_expanded)
+        #targets.extend(currents_expanded)
+        sources.extend(surroundings)
+        targets.extend(currents)
+    return sources, targets
 
 
 def skipgram_preprocessing(
