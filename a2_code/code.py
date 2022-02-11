@@ -631,8 +631,9 @@ def compute_topk_similar(
         The indices of the top k most similar words.
     """
     # TODO: your work here
-    pass
-
+    similarities = F.cosine_similarity(word_emb, w2v_emb_weight, dim=1)
+    sorted_sim, indices = torch.sort(similarities, descending=True)
+    return indices.tolist()[1:k+1]
 
 @torch.no_grad()
 def retrieve_similar_words(
