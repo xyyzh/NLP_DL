@@ -510,7 +510,7 @@ class SharedNNLM:
         # TODO: your work here
         
         self.embedding = nn.Embedding(num_words, embed_dim)
-        self.projection = nn.Linear(embed_dim,num_words)
+        self.projection = nn.Linear(embed_dim,num_words, bias=False)
 
         self.bind_weights()
 
