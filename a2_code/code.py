@@ -875,7 +875,14 @@ class CustomDistilBert(nn.Module):
         """
         
         # TODO: your work here
-        pass
+        distilbert = self.get_distilbert()
+        pred_layer = self.get_pred_layer()
+        sigmoid = self.get_sigmoid()
+        
+        outputs = self.slice_cls_hidden_state(distilbert(**inputs))
+        pred = pred_layer(outputs)
+        pred = sigmoid(pred)
+        return torch.squeeze(pred)
 
 
 if __name__ == "__main__":
