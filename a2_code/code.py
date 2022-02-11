@@ -670,8 +670,13 @@ def retrieve_similar_words(
     You will need to handle that.
     """
     # TODO: your work here
-    pass
-
+    with torch.no_grad():
+        word_ix = index_map[word]
+        # add dimension
+        word_emb = torch.unsqueeze(model.emb.weight[word_ix], 0)
+        topk_indices = compute_topk_similar(word_emb, model.emb.weight, k)
+        topk_words = [index_to_word[ind] for ind in topk_indices]
+        return topk_words
 
 
 @torch.no_grad()
@@ -717,7 +722,15 @@ def word_analogy(
     You will need to handle that.
     """
     # TODO: your work here
-    pass
+    with torch.no_grad():
+        word_a_emb = torch.unsqueeze(model.emb.weight[index_map[word_a]], 0)
+        word_b_emb = torch.unsqueeze(model.emb.weight[index_map[word_b]], 0)
+        word_c_emb = torch.unsqueeze(model.emb.weight[index_map[word_c]], 0)
+        word_emb = word_a_emb - word_b_emb + word_c_emb
+        topk_indices = compute_topk_similar(word_emb, model.emb.weight, k)
+        topk_words = [index_to_word[ind] for ind in topk_indices]
+        return topk_words
+
 
 
 
