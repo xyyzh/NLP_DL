@@ -356,10 +356,10 @@ def build_current_surrounding_pairs(indices: "list[int]", window_size: int = 2):
     [[110, 4887], [3, 11], [4887, 31]]
     """
     # TODO: your work here
-    # not enough length
-    #if len(indices) < (window_size*2+1): return
     surrounding_indices = []
     current_indices = []
+    # not enough length
+    if len(indices) < (window_size*2+1): return surrounding_indices, current_indices
     for i in range(window_size, len(indices)-window_size):
         current_indices.append(indices[i])
         surrounding_indices.append(indices[i-window_size:i] + indices[i+1:i+window_size+1])
@@ -408,6 +408,7 @@ def expand_surrounding_words(
     [3, 3, 4887, 4887, 11, 11]
     """
     # TODO: your work here
+    if (len(ix_surroundings) == 0): return [], []
     two_window_size = len(ix_surroundings[0])
     # flatten the list
     ix_surroundings_expanded = [item for sublist in ix_surroundings for item in sublist]
@@ -508,8 +509,8 @@ class SharedNNLM:
 
         # TODO: your work here
         
-        self.embedding = "your work here"
-        self.projection = "your work here"
+        self.embedding = nn.Embedding(num_words, embed_dim)
+        self.projection = nn.Linear(embed_dim,num_words)
 
         self.bind_weights()
 
@@ -564,7 +565,9 @@ class SkipGram(nn.Module):
             The predicted distribution of the index of a surrounding word.
         """
         # TODO: your work here
-        pass
+        emb = self.emb
+        proj = self.proj
+        return proj(emb(x))
 
 
 class CBOW(nn.Module):
@@ -601,7 +604,9 @@ class CBOW(nn.Module):
             The predicted distribution of the index of w(t).
         """
         # TODO: your work here
-        pass
+        emb = self.emb
+        proj = self.proj
+        return proj(torch.sum(emb(x), dim=1))
 
 
 def compute_topk_similar(
