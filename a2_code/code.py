@@ -850,7 +850,7 @@ class CustomDistilBert(nn.Module):
         
         # TODO: your work here
         tokenizer = self.get_tokenizer()
-        batch_encoding = tokenizer(premise, hypothesis, max_length=max_length, truncation=truncation, padding=padding)
+        batch_encoding = tokenizer(premise, hypothesis, max_length=max_length, truncation=truncation, padding=padding, return_tensors="pt")
         return batch_encoding
 
     def forward(self, inputs: transformers.BatchEncoding):
