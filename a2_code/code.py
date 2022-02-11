@@ -408,10 +408,10 @@ def expand_surrounding_words(
     [3, 3, 4887, 4887, 11, 11]
     """
     # TODO: your work here
-    window_size = len(ix_surroundings[0])
+    two_window_size = len(ix_surroundings[0])
     # flatten the list
     ix_surroundings_expanded = [item for sublist in ix_surroundings for item in sublist]
-    ix_current_expanded = [item for item in ix_current for _ in range(window_size)]
+    ix_current_expanded = [item for item in ix_current for _ in range(two_window_size)]
     return ix_surroundings_expanded, ix_current_expanded
     
 
@@ -441,6 +441,7 @@ def cbow_preprocessing(indices_list: "list[list[int]]", window_size: int = 2):
     # TODO: your work here
     sources, targets = [], []
     for sample in indices_list:
+        #list[int],int -> list[list[int]],list[int]
         surroundings, currents = build_current_surrounding_pairs(sample, window_size)
         #surroundings_expanded, currents_expanded = expand_surrounding_words(surroundings, currents)
         #sources.append(surroundings_expanded)
@@ -480,8 +481,15 @@ def skipgram_preprocessing(
     will not do that for simplicity, instead we'll just use everything.
     """
     # TODO: your work here
-    pass
-
+    sources, targets = [], []
+    for sample in indices_list:
+        #list[int],int -> list[list[int]],list[int]
+        surroundings, currents = build_current_surrounding_pairs(sample, window_size)
+        #list[list[int]],list[int] -> list[int],list[int]
+        surroundings_expanded, currents_expanded = expand_surrounding_words(surroundings, currents)
+        sources.extend(surroundings_expanded)
+        targets.extend(currents_expanded)
+    return sources, targets
 
 class SharedNNLM:
     def __init__(self, num_words: int, embed_dim: int):

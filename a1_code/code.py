@@ -3,7 +3,7 @@ import random
 
 import torch.nn as nn
 import torch
-
+import math
 
 def load_datasets(data_directory: str) -> Union[dict, dict]:
     """
@@ -166,11 +166,18 @@ def tokens_to_ix(
 def build_loader(
     data_dict: dict, batch_size: int = 64, shuffle: bool = False
 ) -> Callable[[], Iterable[dict]]:
+
     """
     Build a nested function. build_loader(...) specifies what type of loader
     you want, and the output is itself a function that, when called, returns
-    a generator. You can iterate over the generator to get a batch of data
-    (which is  a dictionary with the same keys).
+    a generator. You can iterate over the generator to get a batch,
+    which is a dictionary with the same keys, and values are lists of
+    length batch_size (the last batch may be shorter since you only need
+    to include the remaining samples).
+
+    When shuffle=True, then every time you iterate through loader, the batches 
+    will contain different samples. This means the order of the training set is 
+    randomized every time you call `for batch in loader()`
 
     Parameters
     ----------
@@ -178,16 +185,18 @@ def build_loader(
         A dictionary with keys 'premise', 'hypothesis', and potentially
         'label', all of which are lists of same length.
     batch_size: int, optional
-        The size of the batch.
+        The size of the batch. The length of the list in the batch yield by
+        loader will be equal to batch_size, except for the last batch, which
+        may be shorter (since it contains the remaining samples).
     shuffle: bool, optional
         Whether to shuffle the dataset.
 
     Returns
     -------
     function
-        A loader function with no input and returns an iterator yielding a
-        dictionary with the same keys as data_dict, but with length
-        corresponding to batch_size.
+        A loader generator with no input and returns an iterator yielding a
+        dictionary with the same keys as data_dict, but with values of length
+        corresponding to batch_size (or shorter if the last batch is shorter).
 
     Notes
     -----
@@ -196,29 +205,82 @@ def build_loader(
 
     Examples
     --------
-    >>> loader = build_loader(data)
+    >>> loader = build_loader(data)  # let's assume 300 samples
     >>> for batch in loader():
     ...     premise = batch['premise']
     ...     label_batch = batch['label']
     ...     # do something with batch here
+    ...     print(len(premise))
+    64
+    64
+    64
+    8
     """
     # TODO: Your code here
-
+        
     def loader():
         # TODO: Your code here
-        pass
+        if shuffle:
+            premise = data_dict['premise']
+            hypothesis = data_dict['hypothesis']
+            label = data_dict['label']
+            # Make sure they are in correspondance
+            instance = list(zip(premise, hypothesis, label))
+            random.shuffle(instance)
+            premise, hypothesis, label = zip(*instance)
+            data_dict['premise'] = premise
+            data_dict['hypothesis'] = hypothesis
+            data_dict['label'] = label
+            
+        # batches = list()
+        # example: 200 samples, batch_size=64
+        # num_batch = 3  i=0,1,2
+        # [0:64] [64:128] [128:192]
+        # [192:]
+        
+        # example 2: 192 samples, batch_size=64
+        # num_batch = 3  i=0,1,2
+        # [0:64] [64:128] [128:192]
+        num_batch = len(data_dict['premise'])//batch_size
+        for i in range(num_batch):
+            one_batch = {'premise': data_dict['premise'][batch_size*i:batch_size*(i+1)],
+                        'hypothesis': data_dict['hypothesis'][batch_size*i:batch_size*(i+1)],
+                        'label': data_dict['label'][batch_size*i:batch_size*(i+1)]}
+            yield one_batch
+        if batch_size*num_batch < len(data_dict['premise']):
+            remaining = {'premise': data_dict['premise'][batch_size*num_batch:],
+                            'hypothesis': data_dict['hypothesis'][batch_size*num_batch:],
+                            'label': data_dict['label'][batch_size*num_batch:]}
+            yield remaining
 
     return loader
 
-
 ### 1.2 Converting a batch into inputs
-def convert_to_tensors(text_indices: "list[list[str]]") -> torch.Tensor:
+def convert_to_tensors(text_indices: "list[list[int]]") -> torch.Tensor:
     """
-    Given a list of lists of indices, convert it to a tensor of shape (N, L).
-    You will need to handle the padding, which will be the integer
+    Given a list of lists of indices, convert it to a tensor of shape (N, L),
+    You will need to handle the padding, which will be of value 0.
+
+    Parameters
+    ----------
+    text_indices: list of list of int
+        A list of token indices, which can be either the premise or hypothesis
+        from a batch yield by loader().
+    
+    Returns
+    -------
+    torch.Tensor of torch.int32
+        A tensor of shape (N, L) where L is the length of the longest inner list, 
+        and N is the length of the outer list.
     """
     # TODO: Your code here
-    pass
+    text_length = [len(lst) for lst in text_indices]
+    max_length = max(text_length)
+    for i in range(len(text_indices)):
+        text_indices[i] += [0] * (max_length - len(text_indices[i]))
+        
+    text_indices = torch.tensor(text_indices, dtype=torch.int32)
+    return text_indices
 
 
 ### 2.1 Design a logistic model with embedding and pooling
@@ -229,8 +291,7 @@ def max_pool(x: torch.Tensor) -> torch.Tensor:
     N is the batch size, L is the sequence length.
     """
     # TODO: Your code here
-    pass
-
+    return torch.max(x,1).values
 
 class PooledLogisticRegression(nn.Module):
     def __init__(self, embedding: nn.Embedding):
@@ -250,7 +311,10 @@ class PooledLogisticRegression(nn.Module):
             the sequence length.
         """
         super().__init__()
-
+        self.embedding = embedding
+        E = self.embedding.weight.shape[1]
+        self.layer_pred = nn.Linear(2*E, 1)
+        self.sigmoid = nn.Sigmoid()
         # TODO: Your code here
 
     # DO NOT CHANGE THE SECTION BELOW! ###########################
@@ -286,12 +350,19 @@ class PooledLogisticRegression(nn.Module):
         Note the returned tensor is of shape N, not (N, 1). You will need to
         reshape your tensor to get the correct format.
         """
-
+        
         emb = self.get_embedding()
         layer_pred = self.get_layer_pred()
         sigmoid = self.get_sigmoid()
 
         # TODO: Your code here
+        prem = max_pool(emb(premise))
+        hypo = max_pool(emb(hypothesis))
+        concat = torch.cat((prem, hypo), 1)
+        concat = layer_pred(concat)
+        output = sigmoid(concat)
+        output = torch.squeeze(output)
+        return output
 
 
 ### 2.2 Choose an optimizer and a loss function
@@ -317,13 +388,15 @@ def assign_optimizer(model: nn.Module, **kwargs) -> torch.optim.Optimizer:
     https://pytorch.org/docs/stable/optim.html#algorithms
     """
     # TODO: Your code here
-    pass
+    return torch.optim.Adam(model.parameters(), **kwargs)
+
 
 
 def bce_loss(y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
     """
     The binary cross entropy loss, implemented from scratch using torch
-    (do not use torch.nn).
+    Do not use torch.nn, but you may compare your implementation against
+    the official one.
 
     Parameters
     ----------
@@ -338,7 +411,12 @@ def bce_loss(y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
         The binary cross entropy loss (averaged over N).
     """
     # TODO: Your code here
-    pass
+    entropy_sum = 0
+    for true, pred in zip(y, y_pred):
+        term1 = true * math.log(pred + 1e-7)
+        term2 = (1 - true) * math.log(1 - pred + 1e-7)
+        entropy_sum += (term1 + term2)
+    return -entropy_sum / len(y)
 
 
 ### 2.3 Forward and backward pass
@@ -365,7 +443,17 @@ def forward_pass(model: nn.Module, batch: dict, device="cpu"):
     This function should return the predicted y value by the model.
     """
     # TODO: Your code here
-    pass
+# =============================================================================
+#     prem_tokens = tokenize(batch['premise'])
+#     hypo_tokens = tokenize(batch['hypothesis'])
+#     prem_ix = tokens_to_ix(prem_tokens, build_index_map(build_word_counts(prem_tokens)))
+#     hypo_ix = tokens_to_ix(hypo_tokens, build_index_map(build_word_counts(hypo_tokens)))
+# =============================================================================
+    prem_tensor = convert_to_tensors(batch['premise']).to(device)
+    hypo_tensor = convert_to_tensors(batch['hypothesis']).to(device)
+    model.to(device)
+    return model.forward(prem_tensor, hypo_tensor)
+
 
 
 def backward_pass(
@@ -390,13 +478,18 @@ def backward_pass(
         The loss value computed with bce_loss()
     """
     # TODO: Your code here
-    pass
+    loss = bce_loss(y, y_pred)
+    #loss.backward()  #there's no backward method for the loss？
+    optimizer.step()
+    optimizer.zero_grad()
+    return loss
 
 
 ### 2.4 Evaluation
 def f1_score(y: torch.Tensor, y_pred: torch.Tensor, threshold=0.5) -> torch.Tensor:
     """
-    Compute the F1 score from scratch (without using external libraries).
+    Apply the threshold (if it is not None), then compute the F1 score from scratch 
+    (without using external libraries).
 
     Parameters
     ----------
@@ -406,7 +499,8 @@ def f1_score(y: torch.Tensor, y_pred: torch.Tensor, threshold=0.5) -> torch.Tens
         The predicted labels.
     threshold: float, default 0.5
         The threshold to use to convert the predicted labels to binary. If set
-        to None, y_pred will not be thresholded.
+        to None, y_pred will not be thresholded (in this case, we assume y_pred
+        is already binary).
 
     Returns
     -------
@@ -415,7 +509,12 @@ def f1_score(y: torch.Tensor, y_pred: torch.Tensor, threshold=0.5) -> torch.Tens
 
     """
     # TODO: Your code here
-    pass
+    if (threshold):
+        y_pred = y_pred.apply_(lambda x: 1 if x >= threshold else 0)
+    tp = torch.sum((y == y_pred) * (y_pred == 1))
+    fp = torch.sum((y != y_pred) * (y_pred == 0))
+    fn = torch.sum((y != y_pred) * (y_pred == 1))
+    return tp / (tp + (fp + fn) / 2)
 
 
 ### 2.5 Train loop
@@ -437,6 +536,8 @@ def eval_run(
 
     Returns
     -------
+    Return the true labels and predicted ones for all data samples at once.
+    The length should correspond to the length of the input labels (before you give to the loader).
     y_true: torch.Tensor[N]
         The true labels, extracted from the loader.
     y_pred: torch.Tensor[N]
@@ -449,7 +550,18 @@ def eval_run(
     evaluation mode.
     """
     # TODO: Your code here
-    pass
+    y_true = list()
+    y_pred = list()
+    model.eval()
+    for batch in loader():
+        with torch.no_grad(): 
+            label = batch['label']
+            y_true.extend(label)
+            pred_label = forward_pass(model, batch, device)
+            y_pred.extend(pred_label.tolist())
+    y_true = torch.tensor(y_true, dtype=torch.float)
+    y_pred = torch.tensor(y_pred, dtype=torch.float)
+    return y_true, y_pred
 
 
 def train_loop(
@@ -491,7 +603,40 @@ def train_loop(
     of each epoch.
     """
     # TODO: Your code here
-    pass
+    
+    f1 = list()
+    for epoch in range(n_epochs):
+        print('================ Epoch {} / {} ================'.format(epoch + 1, n_epochs))  
+        print('Training...')
+        model.train()     
+        for batch in train_loader():
+            #model.zero_grad()
+            label = batch['label']
+            y_true = torch.tensor(label, dtype=torch.float)
+            y_pred = forward_pass(model, batch, device)    
+            #print("y_true and y_pred ", y_true, y_pred)
+            train_loss = backward_pass(optimizer, y_true, y_pred)
+        
+        #y_true, y_pred = eval_run(model, train_loader, device)
+        
+        print("Training loss is ", train_loss.item())
+        
+        print("Running Validation...")
+        model.eval()
+        train_y_true, train_y_pred = eval_run(model, train_loader, device)
+# =============================================================================
+        #print(train_y_true, train_y_pred)
+# =============================================================================
+        train_score = f1_score(train_y_true, train_y_pred)
+        print("F1-score for training is ", train_score.item())
+        
+        val_y_true, val_y_pred = eval_run(model, valid_loader, device)
+        val_score = f1_score(val_y_true, val_y_pred)
+        print("F1-score for validation is ", val_score.item())
+        f1.append(val_score)
+    return f1
+        
+
 
 
 ### 3.1
@@ -516,6 +661,14 @@ class ShallowNeuralNetwork(nn.Module):
         super().__init__()
 
         # TODO: continue here
+        self.embedding = embedding
+        E = self.embedding.weight.shape[1]
+        self.ff_layer = nn.Linear(2*E, hidden_size) 
+        self.activation = nn.ReLU()
+        self.layer_pred = nn.Linear(hidden_size, 1) 
+        #self.layer_pred = nn.Linear(2*E, 1)
+        self.sigmoid = nn.Sigmoid()
+        
 
     # DO NOT CHANGE THE SECTION BELOW! ###########################
     # # This is to force you to initialize certain things in __init__
@@ -559,6 +712,15 @@ class ShallowNeuralNetwork(nn.Module):
         act = self.get_activation()
 
         # TODO: continue here
+        prem = max_pool(emb(premise))
+        hypo = max_pool(emb(hypothesis))
+        concat = torch.cat((prem, hypo), 1)
+        concat = ff_layer(concat)
+        concat = act(concat)
+        concat = layer_pred(concat)
+        output = sigmoid(concat)
+        output = torch.squeeze(output)
+        return output
 
 
 ### 3.2
@@ -592,6 +754,22 @@ class DeepNeuralNetwork(nn.Module):
         super().__init__()
 
         # TODO: continue here
+        self.embedding = embedding
+        E = self.embedding.weight.shape[1]
+        self.activation = nn.ReLU()
+        self.ff_layers = nn.ModuleList([nn.Linear(2*E, hidden_size)])
+        # self.ff_layers = nn.Linear(2*E, hidden_size)
+        middle_layer = nn.Linear(hidden_size, hidden_size)
+        for _ in range(num_layers-1):        
+            self.ff_layers.append(middle_layer)
+        
+        #if num_layers > 1:
+        #    for _ in range(num_layers):
+        #        self.ff_layers = lambda x: self.middle_layer(self.activation(self.ff_layers(x)))
+                
+        self.layer_pred = nn.Linear(hidden_size, 1) 
+        #self.layer_pred = nn.Linear(2*E, 1)
+        self.sigmoid = nn.Sigmoid()
 
     # DO NOT CHANGE THE SECTION BELOW! ###########################
     # # This is to force you to initialize certain things in __init__
@@ -635,6 +813,19 @@ class DeepNeuralNetwork(nn.Module):
         act = self.get_activation()
 
         # TODO: continue here
+        prem = max_pool(emb(premise))
+        hypo = max_pool(emb(hypothesis))
+        concat = torch.cat((prem, hypo), 1)
+        for l in ff_layers:
+            concat = l(concat)
+            concat = act(concat)
+            
+        #concat = ff_layers(concat)
+        #
+        concat = layer_pred(concat)
+        output = sigmoid(concat)
+        output = torch.squeeze(output)
+        return output
 
 
 if __name__ == "__main__":
@@ -681,19 +872,19 @@ if __name__ == "__main__":
     }
 
     # 1.1
-    train_loader = "your code here"
-    valid_loader = "your code here"
+    train_loader = build_loader(train_indices)
+    valid_loader = build_loader(valid_indices)
 
     # 1.2
     batch = next(train_loader())
-    y = "your code here"
+    y = batch['label']
 
     # 2.1
-    embedding = "your code here"
-    model = "your code here"
+    embedding = nn.Embedding(500, 56)
+    model = PooledLogisticRegression(embedding)
 
     # 2.2
-    optimizer = "your code here"
+    optimizer = assign_optimizer(model)
 
     # 2.3
     y_pred = "your code here"
