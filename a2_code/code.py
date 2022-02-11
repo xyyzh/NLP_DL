@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 import transformers
+from transformers import DistilBertTokenizer, DistilBertModel
 
 
 # ########################## PART 1: PROVIDED CODE ##############################
@@ -753,11 +754,12 @@ class CustomDistilBert(nn.Module):
         """
         super().__init__()
 
-        self.distilbert = "your work here"
-        self.tokenizer = "your work here"
-        self.pred_layer = "your work here"
-        self.sigmoid = "your work here"
-        self.criterion = "your work here"
+        self.distilbert = DistilBertModel.from_pretrained('distilbert-base-uncased')
+        self.tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+        #should find hidden size without hard coding
+        self.pred_layer = nn.Linear(768, 1) 
+        self.sigmoid = nn.Sigmoid()
+        self.criterion = nn.BCELoss()
 
     # DO NOT CHANGE BELOW THIS LINE
     def get_distilbert(self):
@@ -792,7 +794,7 @@ class CustomDistilBert(nn.Module):
             An Adam optimizer bound to the model
         """
         # TODO: your work here
-        pass
+        return torch.optim.Adam(self.parameters(), **kwargs)
 
     def slice_cls_hidden_state(
         self, x: transformers.modeling_outputs.BaseModelOutput
@@ -814,7 +816,8 @@ class CustomDistilBert(nn.Module):
             is the first token in the sequence.
         """
         # TODO: your work here
-        pass
+        hs = x.last_hidden_state
+        return hs[:,0]
 
     def tokenize(
         self,
@@ -846,7 +849,9 @@ class CustomDistilBert(nn.Module):
         """
         
         # TODO: your work here
-        pass
+        tokenizer = self.get_tokenizer()
+        batch_encoding = tokenizer(premise, hypothesis, max_length=max_length, truncation=truncation, padding=padding)
+        return batch_encoding
 
     def forward(self, inputs: transformers.BatchEncoding):
         """
